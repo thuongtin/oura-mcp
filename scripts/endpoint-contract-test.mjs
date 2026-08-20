@@ -84,6 +84,35 @@ try {
     failures.push(error);
   }
 
+  const fetchCountBeforeHeartrate = requestedUrls.length;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    requestedUrls.push(url);
+    return Response.json({
+      data: [
+        { bpm: 50, timestamp: '2026-08-19T05:20:00Z' },
+        { bpm: 60, timestamp: '2026-08-19T22:15:00Z' },
+        { bpm: 70, timestamp: '2026-08-19T23:05:00Z' }
+      ]
+    });
+  };
+  try {
+    const heartrate = await client.list('/usercollection/heartrate', {
+      after: '2026-08-19T22:00:00Z',
+      before: '2026-08-19T23:00:00Z',
+      limit: 10
+    });
+    const hrUrl = requestedUrls.at(-1);
+    assert.equal(requestedUrls.length, fetchCountBeforeHeartrate + 1);
+    assert.equal(hrUrl.searchParams.get('start_datetime'), '2026-08-19T22:00:00Z');
+    assert.equal(hrUrl.searchParams.get('end_datetime'), '2026-08-19T23:00:00Z');
+    assert.equal(hrUrl.searchParams.get('start_date'), null);
+    assert.equal(heartrate.records.length, 1);
+    assert.equal(heartrate.records[0].bpm, 60);
+  } catch (error) {
+    failures.push(error);
+  }
+
   if (failures.length) throw new AggregateError(failures, 'Oura endpoint contract regressions');
   console.log(JSON.stringify({ ok: true, suite: 'endpoint-contracts', requests: requestedUrls.length }, null, 2));
 } finally {

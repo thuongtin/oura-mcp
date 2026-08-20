@@ -8,10 +8,10 @@ Callback URL:
 http://127.0.0.1:3000/callback
 ```
 
-Recommended scopes:
+Recommended scopes (full Oura consent set):
 
 ```text
-daily heartrate personal workout spo2
+personal daily email heartrate workout tag session spo2 ring_configuration stress heart_health
 ```
 
 Run:

@@ -10,22 +10,40 @@ export const OURA_REVOKE_URL = "https://api.ouraring.com/oauth/revoke";
 export const OURA_DEVELOPER_PORTAL_URL = "https://cloud.ouraring.com/oauth/applications";
 export const OURA_DOCS_URL = "https://cloud.ouraring.com/docs/authentication";
 
-// Official Oura OAuth scopes (cloud.ouraring.com OpenAPI + auth docs).
-// There is no separate "sleep" scope — sleep/readiness/activity daily data is under `daily`.
-// SpO2 is documented as both `spo2` (auth docs / consent UI) and `spo2Daily` (OpenAPI); doctor treats them as aliases.
+// Official Oura OAuth scopes, copied from the Example Authorization URL on the
+// app registration page. Public auth docs still list eight and omit the last three.
+// There is no separate "sleep" scope: sleep/readiness/activity daily data is under `daily`.
+// SpO2 is `spo2` on the consent UI and `spo2Daily` in OpenAPI; doctor treats them as aliases.
 export const DEFAULT_SCOPES = [
-  "daily",
-  "heartrate",
   "personal",
+  "daily",
+  "email",
+  "heartrate",
   "workout",
-  "spo2"
+  "tag",
+  "session",
+  "spo2",
+  "ring_configuration",
+  "stress",
+  "heart_health"
 ];
+
+export const DEFAULT_SCOPES_LINE = DEFAULT_SCOPES.join(" ");
 
 /** Map wire-format aliases to the canonical name used by DEFAULT_SCOPES / doctor. */
 export const SCOPE_ALIASES: Record<string, string> = {
   spo2daily: "spo2",
   spo2_daily: "spo2"
 };
+
+/**
+ * Oura returns granted scopes namespaced (`extapi:daily`). Compare only the
+ * canonical name or doctor marks every recommended scope as missing.
+ */
+export function canonicalizeScope(scope: string): string {
+  const stripped = scope.trim().replace(/^[a-z0-9_-]+:/i, "").toLowerCase();
+  return SCOPE_ALIASES[stripped] ?? stripped;
+}
 
 export const DEFAULT_LIMIT = 30;
 export const MAX_OURA_LIMIT = 100;

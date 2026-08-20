@@ -1,3 +1,17 @@
+## Unreleased
+
+### Changed
+
+- OAuth now requests the full Oura consent set used by oRing: `personal daily email heartrate workout tag session spo2 ring_configuration stress heart_health`. Doctor strips the `extapi:` prefix Oura returns on granted scopes.
+- `oura_connection_status` re-reads the token file on every call, strips `extapi:`, and `chmod 600`s it when the process can. Container entrypoint does the same as root on bind mounts that RouterOS FTP left at 666.
+- Time-series collections (`oura_list_heartrate`) send `start_datetime`/`end_datetime` and filter by timestamp locally. Daily collections still use `start_date`/`end_date`.
+- Collection markdown lists present record fields (including `0`) instead of a workout template that printed `n/a` for `daily_sleep`. Leftover keys such as `spo2_percentage.average` and `breathing_disturbance_index` are included so a stale field list cannot silently drop data.
+
+### Added
+
+- HTTP bearer auth via `OURA_MCP_HTTP_TOKEN`. Non-loopback binds refuse to start without it.
+- `linux/arm64` Dockerfile and RouterOS container deploy notes for MikroTik.
+
 ## 0.7.0 - 2026-08-13
 
 ### Fixed

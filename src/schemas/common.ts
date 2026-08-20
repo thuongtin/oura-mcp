@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DEFAULT_LIMIT, DEFAULT_MAX_PAGES, MAX_PAGES, MAX_OURA_LIMIT } from "../constants.js";
+import type { OuraRangeMode } from "../services/oura-range.js";
 import { AGENT_CLIENTS } from "../services/agent-manifest.js";
 
 export const ResponseFormatSchema = z.enum(["markdown", "json"]).default("markdown");
@@ -38,10 +39,16 @@ function recencyRoute(latestResourceUri?: string): string {
  * `latestResourceUri` names the oura://latest/... resource that answers "most recent" for
  * THIS endpoint, when one exists. Everything else is identical across the nine tools.
  */
-export function collectionInputSchema(latestResourceUri?: string) {
+export function collectionInputSchema(latestResourceUri?: string, rangeMode: OuraRangeMode = "date") {
+  const afterHint = rangeMode === "datetime"
+    ? "Only return Oura records after this time. Sent upstream as start_datetime and filtered locally by timestamp, so an hour window does not return earlier samples from the same day."
+    : "Only return Oura records after this time. Converted to an Oura start_date (the calendar day). Daily collections have no hour filter.";
+  const beforeHint = rangeMode === "datetime"
+    ? "Only return Oura records before this time. Sent upstream as end_datetime and filtered locally by timestamp."
+    : "Only return Oura records before this time. Converted to an Oura end_date (the calendar day). Daily collections have no hour filter.";
   return z.object({
-    after: DateTimeSchema.describe("Only return Oura records after this time. Converted to an Oura start_date."),
-    before: DateTimeSchema.describe("Only return Oura records before this time. Converted to an Oura end_date."),
+    after: DateTimeSchema.describe(afterHint),
+    before: DateTimeSchema.describe(beforeHint),
     next_token: z.string().min(1).max(4096).optional()
       .describe("Opaque Oura v2 cursor from a previous collection response. Pass it back unchanged with the same after/before window to resume. Oura has no integer page index and no page-size parameter; do not invent or increment a page number."),
     limit: z.number().int().min(1).max(MAX_OURA_LIMIT).default(DEFAULT_LIMIT)

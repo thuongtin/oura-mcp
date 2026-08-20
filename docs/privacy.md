@@ -11,3 +11,5 @@ Oura health data is sensitive. This MCP stores OAuth tokens locally under `~/.ou
 ## Boundary
 
 The MCP uses the official Oura Cloud API v2. It does not expose raw accelerometer telemetry, private Google endpoints, or medical diagnosis.
+
+HTTP on a non-loopback address requires `OURA_MCP_HTTP_TOKEN`. Do not publish `/mcp` to a LAN or tunnel without that token (and Cloudflare Access if the hostname is on the internet).

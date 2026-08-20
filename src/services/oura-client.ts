@@ -4,6 +4,7 @@ import type { OuraConfig, OuraTokenSet } from "../types.js";
 import { disabledCacheStatus, OuraCache, type CacheStatus } from "./cache.js";
 import { fetchWithCache, getCacheStats } from "./http-cache.js";
 import { fetchWithRetry as fetchWithRetryMiddleware } from "./http-retry.js";
+import { filterRecordsByTimeWindow, hasClock, ouraRangeQuery, rangeModeFor } from "./oura-range.js";
 import { mostRecentRecord } from "./recency.js";
 import { redactErrorMessage } from "./redaction.js";
 import { TokenStore } from "./token-store.js";
@@ -116,10 +117,12 @@ export class OuraClient {
    * Read an Oura collection endpoint.
    *
    * `limit` is a cap on how many records this call returns, applied locally: the Oura v2
-   * API exposes no page-size parameter, only `start_date`, `end_date` and the opaque
-   * `next_token` cursor. Pagination therefore ends when the upstream cursor is exhausted
-   * or when `max_pages` / the cap is reached — never by comparing a page's length to
-   * `limit`, which is a number the API has never seen.
+   * API exposes no page-size parameter, only a date or datetime window plus the opaque
+   * `next_token` cursor. Daily collections use `start_date`/`end_date`. Time-series
+   * collections (heartrate) use `start_datetime`/`end_datetime` and are also filtered
+   * locally by timestamp so an hour window cannot return a morning sample. Pagination
+   * ends when the upstream cursor is exhausted or when `max_pages` / the cap is reached
+   * — never by comparing a page's length to `limit`, which is a number the API has never seen.
    *
    * The cap keeps records from the OLDEST end, because that is the end Oura serves first
    * and the only end reachable without walking the whole window. Callers that want the
@@ -137,25 +140,33 @@ export class OuraClient {
   async list(path: string, params: ListParams = {}): Promise<ListResult> {
     rejectDecorativePage(params);
     const limit = Math.min(Math.max(params.limit ?? DEFAULT_LIMIT, 1), MAX_OURA_LIMIT);
-    const maxPages = params.all_pages ? Math.max(1, params.max_pages ?? 1) : 1;
+    const timeFilter = rangeModeFor(path) === "datetime" && (hasClock(params.after) || hasClock(params.before));
+    const maxPages = timeFilter
+      ? Math.max(params.all_pages ? Math.max(1, params.max_pages ?? 1) : 1, LATEST_SCAN_MAX_PAGES)
+      : params.all_pages
+        ? Math.max(1, params.max_pages ?? 1)
+        : 1;
     const collected: unknown[] = [];
     let nextToken: string | undefined = params.next_token;
     let pages = 0;
+    const range = ouraRangeQuery(path, params);
 
     while (pages < maxPages) {
       const payload = await this.get(path, {
-        ...ouraDateRange(params),
+        ...range,
         next_token: nextToken
       });
       collected.push(...extractRecords(payload));
       pages += 1;
       nextToken = extractNextToken(payload);
-      // Stop on cursor exhaustion, on a satisfied cap, or on a single-page request.
-      if (!nextToken || collected.length >= limit || !params.all_pages) break;
+      const visible = timeFilter ? filterRecordsByTimeWindow(collected, params) : collected;
+      if (!nextToken || visible.length >= limit || (!params.all_pages && !timeFilter)) break;
+      if (timeFilter && visible.length >= limit) break;
     }
 
-    const records = collected.slice(0, limit);
-    const truncated = collected.length > limit;
+    const visible = timeFilter ? filterRecordsByTimeWindow(collected, params) : collected;
+    const records = visible.slice(0, limit);
+    const truncated = visible.length > limit;
     return {
       records,
       next_token: truncated ? undefined : nextToken,
@@ -188,7 +199,7 @@ export class OuraClient {
     let scanned = 0;
 
     while (pages < maxPages) {
-      const payload = await this.get(path, { ...ouraDateRange(params), next_token: nextToken });
+      const payload = await this.get(path, { ...ouraRangeQuery(path, params), next_token: nextToken });
       const pageRecords = extractRecords(payload);
       scanned += pageRecords.length;
       if (pageRecords.length > 0) best = mostRecentRecord(best === undefined ? pageRecords : [best, ...pageRecords]);
@@ -367,26 +378,6 @@ export class OuraClient {
       innerFetch: retryWrappedFetch
     });
   }
-}
-
-function ouraDateRange(params: { after?: string; before?: string }): Record<string, string> {
-  const range: Record<string, string> = {};
-  if (params.after) range.start_date = toDate(params.after);
-  if (params.before) range.end_date = toDate(params.before);
-  return range;
-}
-
-function toDate(value: string): string {
-  if (value === "today") return value;
-  const match = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(value);
-  if (!match) throw new Error(`Invalid Oura date range value: ${value}`);
-
-  const date = `${match[1]}-${match[2]}-${match[3]}`;
-  const parsed = new Date(`${date}T00:00:00Z`);
-  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
-    throw new Error(`Invalid Oura date range value: ${value}`);
-  }
-  return date;
 }
 
 function extractRecords(payload: unknown): unknown[] {

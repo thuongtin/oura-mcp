@@ -39,6 +39,7 @@ import { buildConnectionStatus } from "../services/connection-status.js";
 import { buildDemoPayload } from "../services/demo.js";
 import { getConfig } from "../services/config.js";
 import { bulletList, formatCollection, makeError, makeResponse } from "../services/format.js";
+import { rangeModeFor } from "../services/oura-range.js";
 import { applyPrivacy, resolvePrivacyMode } from "../services/privacy.js";
 import { buildDailySummary, buildWeeklySummary, formatSummaryMarkdown } from "../services/summary.js";
 import { buildWellnessContext, formatWellnessContextMarkdown } from "../services/context.js";
@@ -106,7 +107,7 @@ function registerCollectionTool(server: McpServer, name: string, title: string, 
     {
       title,
       description,
-      inputSchema: collectionInputSchema(latestResourceUri).shape,
+      inputSchema: collectionInputSchema(latestResourceUri, rangeModeFor(endpoint)).shape,
       outputSchema: CollectionOutputSchema.shape,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }
     },
@@ -200,7 +201,7 @@ export function registerOuraTools(server: McpServer): void {
           title: hasToken ? "(done) Local token present — ready to read Oura data" : "Run the OAuth dance",
           action: hasToken
             ? "Tokens stored under ~/.oura-mcp/tokens.json. The connector will refresh automatically when needed."
-            : "Run `oura-mcp-server auth` (or call oura_get_auth_url + oura_exchange_code from the agent). Open the URL, grant access, paste the code. Recommended scopes: daily heartrate personal workout spo2.",
+            : "Run `oura-mcp-server auth` (or call oura_get_auth_url + oura_exchange_code from the agent). Open the URL, grant access, paste the code. Recommended scopes: personal daily email heartrate workout tag session spo2 ring_configuration stress heart_health.",
           done: hasToken,
         },
         {

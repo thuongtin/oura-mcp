@@ -11,6 +11,7 @@ This repo is the unofficial Oura MCP connector for local agent workflows.
 - Build: `npm run build`
 - Fast smoke: `npm run smoke`
 - HTTP smoke: `npm run smoke:http`
+- HTTP bearer: `npm run test:http-auth`
 - Full gate: `npm test`
 
 ## Rules

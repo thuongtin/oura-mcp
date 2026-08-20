@@ -1,10 +1,11 @@
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_SCOPES, OURA_DEVELOPER_PORTAL_URL, PINNED_NPM_PACKAGE, SCOPE_ALIASES } from "../constants.js";
+import { canonicalizeScope, DEFAULT_SCOPES, OURA_DEVELOPER_PORTAL_URL, PINNED_NPM_PACKAGE } from "../constants.js";
 import type { PrivacyMode, OuraTokenSet } from "../types.js";
 import { HERMES_DIRECT_TOOLS, type AgentClientName } from "./agent-manifest.js";
 import { loadConfigSources } from "./local-config.js";
+import { ensureSecureTokenFile } from "./token-store.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -152,6 +153,7 @@ function isLocalHttpRedirect(value: string): boolean {
 
 async function inspectToken(path: string, nowSeconds: number): Promise<ConnectionStatus["token"]> {
   try {
+    await ensureSecureTokenFile(path);
     const [stat, text] = await Promise.all([fs.stat(path), fs.readFile(path, "utf8")]);
     const permissions = (stat.mode & 0o777).toString(8).padStart(3, "0");
     const securePermissions = process.platform === "win32" ? true : (stat.mode & 0o077) === 0;
@@ -287,12 +289,7 @@ function buildOAuthScopeStatus(token: ConnectionStatus["token"]): ConnectionStat
 
 function parseScopes(scope: string | undefined): string[] {
   if (!scope) return [];
-  return Array.from(new Set(scope.split(/[,\s]+/).map((value) => value.trim()).filter(Boolean))).sort();
-}
-
-function canonicalizeScope(scope: string): string {
-  const key = scope.trim().toLowerCase();
-  return SCOPE_ALIASES[key] ?? key;
+  return Array.from(new Set(scope.split(/[,\s]+/).map((value) => canonicalizeScope(value)).filter(Boolean))).sort();
 }
 
 function buildNextSteps(input: {

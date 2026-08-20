@@ -20,7 +20,7 @@ try {
     access_token: 'access',
     refresh_token: 'refresh',
     expires_at: 2_000_000,
-    scope: 'daily heartrate personal workout spo2'
+    scope: 'personal daily email heartrate workout tag session spo2 ring_configuration stress heart_health'
   }), { mode: 0o600 });
 
   const ready = await buildConnectionStatus({
@@ -120,7 +120,7 @@ try {
   const savedConfig = JSON.parse(readFileSync(configPath, 'utf8'));
   assert.equal(savedConfig.OURA_CLIENT_ID, 'client-id-from-setup');
   assert.equal(savedConfig.OURA_CLIENT_SECRET, 'client-secret-from-setup');
-  assert.equal(savedConfig.OURA_SCOPES, 'daily heartrate personal workout spo2');
+  assert.equal(savedConfig.OURA_SCOPES, 'personal daily email heartrate workout tag session spo2 ring_configuration stress heart_health');
   assert.equal(savedConfig.OURA_PRIVACY_MODE, 'summary');
   assert.equal(savedConfig.OURA_CACHE, 'sqlite');
 

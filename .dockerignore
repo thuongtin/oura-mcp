@@ -1,0 +1,14 @@
+.git
+.github
+node_modules
+dist
+docs
+examples
+scripts
+assets
+*.md
+!README.md
+.env
+.oura-mcp
+coverage
+.DS_Store

@@ -9,6 +9,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export async function ensureSecureTokenFile(path: string): Promise<void> {
+  try {
+    await fs.chmod(path, 0o600);
+  } catch {
+    // Bind mounts on RouterOS are often 666 and owned by another uid.
+  }
+}
+
 export class TokenStore {
   constructor(private readonly tokenPath: string) {}
 
@@ -31,7 +39,7 @@ export class TokenStore {
     const tmp = `${this.tokenPath}.tmp-${process.pid}`;
     await fs.writeFile(tmp, JSON.stringify(tokens, null, 2), { mode: 0o600 });
     await fs.rename(tmp, this.tokenPath);
-    await fs.chmod(this.tokenPath, 0o600).catch(() => undefined);
+    await ensureSecureTokenFile(this.tokenPath);
   }
 
   async clear(): Promise<void> {

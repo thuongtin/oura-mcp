@@ -43,6 +43,8 @@ npx -y oura-mcp-unofficial --http
 
 Env: `OURA_MCP_HOST`, `OURA_MCP_PORT`, `OURA_MCP_TRANSPORT=http`.
 
+Binding a non-loopback host requires `OURA_MCP_HTTP_TOKEN`. `POST /mcp` then expects `Authorization: Bearer <token>`. `/health` stays open and does not return secrets. See [MikroTik container deploy](docs/mikrotik-container.md).
+
 
 <!-- /delx-wellness header v2 -->
 
@@ -72,10 +74,10 @@ npx -y oura-mcp-unofficial auth     # opens browser, captures the OAuth code
 npx -y oura-mcp-unofficial doctor   # verifies you're ready
 ```
 
-Recommended scopes:
+Recommended scopes (full Oura consent set):
 
 ```text
-daily heartrate personal workout spo2
+personal daily email heartrate workout tag session spo2 ring_configuration stress heart_health
 ```
 
 Then add this to your MCP client config:
@@ -244,7 +246,7 @@ OURA_CLIENT_SECRET=…
 OURA_REDIRECT_URI=http://127.0.0.1:3000/callback
 
 # Optional
-OURA_SCOPES="daily heartrate personal workout spo2"
+OURA_SCOPES="personal daily email heartrate workout tag session spo2 ring_configuration stress heart_health"
 OURA_PRIVACY_MODE=structured        # summary | structured | raw
 OURA_CACHE=sqlite                   # optional read-through cache
 OURA_TOKEN_PATH=~/.oura-mcp/tokens.json

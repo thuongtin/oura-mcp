@@ -28,6 +28,40 @@ export function bulletList(title: string, fields: Record<string, unknown>): stri
   return lines.join("\n");
 }
 
+const SKIP_KEYS = new Set(["id", "id_str"]);
+
+const PREVIEW_KEYS = [
+  "name",
+  "day",
+  "timestamp",
+  "bedtime_start",
+  "bedtime_end",
+  "start_datetime",
+  "end_datetime",
+  "start_date",
+  "created_at",
+  "score",
+  "bpm",
+  "source",
+  "activity",
+  "intensity",
+  "type",
+  "sport_type",
+  "contributors",
+  "steps",
+  "active_calories",
+  "efficiency",
+  "average_hrv",
+  "lowest_heart_rate",
+  "distance",
+  "moving_time",
+  "total_elevation_gain",
+  "spo2_percentage",
+  "breathing_disturbance_index",
+  "temperature_deviation",
+  "temperature_trend_deviation"
+];
+
 export function formatCollection(title: string, records: unknown[], meta: Record<string, unknown>): string {
   const metaLines = Object.entries(meta)
     .filter(([key, value]) => key !== "records" && value !== undefined && value !== null)
@@ -38,15 +72,10 @@ export function formatCollection(title: string, records: unknown[], meta: Record
     if (record && typeof record === "object") {
       const object = record as Record<string, unknown>;
       const id = object.id ?? object.id_str ?? `item-${index + 1}`;
-      const start = object.start_date ?? object.start_date_local ?? object.created_at ?? object.updated_at ?? "n/a";
-      const sport = object.sport_type ?? object.type ?? "n/a";
       lines.push(`## ${String(id)}`);
-      if (object.name) lines.push(`- **name**: ${String(object.name)}`);
-      lines.push(`- **start/created**: ${String(start)}`);
-      lines.push(`- **sport/type**: ${String(sport)}`);
-      if (object.distance !== undefined) lines.push(`- **distance_m**: ${String(object.distance)}`);
-      if (object.moving_time !== undefined) lines.push(`- **moving_time_s**: ${String(object.moving_time)}`);
-      if (object.total_elevation_gain !== undefined) lines.push(`- **elevation_m**: ${String(object.total_elevation_gain)}`);
+      for (const [key, value] of previewFields(object)) {
+        lines.push(`- **${key}**: ${formatMarkdownValue(value)}`);
+      }
       lines.push("");
     } else {
       lines.push(`- ${JSON.stringify(record)}`);
@@ -54,6 +83,38 @@ export function formatCollection(title: string, records: unknown[], meta: Record
   }
   if (records.length > preview.length) lines.push(`... ${records.length - preview.length} more records omitted from markdown preview.`);
   return lines.join("\n");
+}
+
+function isPresent(value: unknown): boolean {
+  return value !== undefined && value !== null && value !== "";
+}
+
+function previewFields(object: Record<string, unknown>): Array<[string, unknown]> {
+  const seen = new Set<string>();
+  const fields: Array<[string, unknown]> = [];
+  const emit = (key: string, value: unknown) => {
+    if (!isPresent(value) || seen.has(key) || SKIP_KEYS.has(key)) return;
+    seen.add(key);
+    if (isAverageObject(value)) {
+      fields.push([`${key}.average`, value.average]);
+      return;
+    }
+    fields.push([key, value]);
+  };
+
+  for (const key of PREVIEW_KEYS) emit(key, object[key]);
+  for (const key of Object.keys(object).sort()) emit(key, object[key]);
+  return fields;
+}
+
+function isAverageObject(value: unknown): value is { average: unknown } {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === 1 &&
+    "average" in value
+  );
 }
 
 function formatMarkdownValue(value: unknown): string {
