@@ -1,4 +1,5 @@
 import type { OuraClient } from "./oura-client.js";
+import { shiftOuraDate } from "./oura-range.js";
 import { redactErrorMessage } from "./redaction.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -20,6 +21,30 @@ function firstData(value: unknown): UnknownRecord {
   if (!isObject(value)) return {};
   if (Array.isArray(value.data)) return isObject(value.data[0]) ? value.data[0] : {};
   return value;
+}
+
+function recordsOf(value: unknown): UnknownRecord[] {
+  if (Array.isArray(value)) return value.filter(isObject);
+  if (!isObject(value)) return [];
+  if (Array.isArray(value.data)) return value.data.filter(isObject);
+  return [value];
+}
+
+function recordOnDay(value: unknown, date: string, predicate?: (record: UnknownRecord) => boolean): UnknownRecord {
+  const records = recordsOf(value);
+  return records.find((record) => record.day === date && (!predicate || predicate(record))) ?? {};
+}
+
+/** Night stats come from type=long_sleep on that calendar day. Naps/rest/deleted must not supply them. */
+function nightSleep(value: unknown, date: string): UnknownRecord {
+  return recordOnDay(value, date, (record) => record.type === "long_sleep");
+}
+
+function spo2Average(record: UnknownRecord): number | undefined {
+  const value = record.spo2_percentage;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (isObject(value) && typeof value.average === "number" && Number.isFinite(value.average)) return value.average;
+  return undefined;
 }
 
 function num(record: UnknownRecord, keys: string[]): number | undefined {
@@ -69,22 +94,25 @@ async function safeGet(client: Pick<OuraClient, "get">, endpoint: string, params
 }
 
 async function dailyBundle(client: Pick<OuraClient, "get">, date: string) {
-  const range = { start_date: date, end_date: date };
+  const sameDay = { start_date: date, end_date: date };
+  // /sleep and /daily_activity return an empty page when start_date === end_date.
+  // daily_activity also treats start_date as exclusive, so prev→date yields day=date.
+  const spanning = { start_date: shiftOuraDate(date, -1), end_date: date };
   const [activity, dailySleep, readiness, sleep, spo2] = await Promise.all([
-    safeGet(client, "/usercollection/daily_activity", range),
-    safeGet(client, "/usercollection/daily_sleep", range),
-    safeGet(client, "/usercollection/daily_readiness", range),
-    safeGet(client, "/usercollection/sleep", range),
-    safeGet(client, "/usercollection/daily_spo2", range)
+    safeGet(client, "/usercollection/daily_activity", spanning),
+    safeGet(client, "/usercollection/daily_sleep", sameDay),
+    safeGet(client, "/usercollection/daily_readiness", sameDay),
+    safeGet(client, "/usercollection/sleep", spanning),
+    safeGet(client, "/usercollection/daily_spo2", sameDay)
   ]);
   return { date, activity, dailySleep, readiness, sleep, spo2 };
 }
 
 function dailyStats(bundle: Awaited<ReturnType<typeof dailyBundle>>) {
-  const activity = firstData(bundle.activity);
+  const activity = recordOnDay(bundle.activity, bundle.date);
   const dailySleep = firstData(bundle.dailySleep);
   const readiness = firstData(bundle.readiness);
-  const sleep = firstData(bundle.sleep);
+  const sleep = nightSleep(bundle.sleep, bundle.date);
   const spo2 = firstData(bundle.spo2);
   const totalSleepSeconds = num(sleep, ["total_sleep_duration", "time_in_bed"]);
   const activeCalories = num(activity, ["active_calories", "calories"]);
@@ -104,7 +132,7 @@ function dailyStats(bundle: Awaited<ReturnType<typeof dailyBundle>>) {
     average_heart_rate: num(sleep, ["average_heart_rate"]),
     lowest_heart_rate: num(sleep, ["lowest_heart_rate"]),
     hrv_rmssd: num(sleep, ["average_hrv"]),
-    spo2_percentage: num(spo2, ["spo2_percentage"]),
+    spo2_percentage: spo2Average(spo2),
     temperature_deviation: num(readiness, ["temperature_deviation"]),
     has_activity_error: isObject(bundle.activity) && typeof bundle.activity.error === "string",
     has_sleep_error: isObject(bundle.sleep) && typeof bundle.sleep.error === "string",
@@ -134,7 +162,9 @@ function buildActions(stats: ReturnType<typeof dailyStats>, weekly?: ReturnType<
   if (state === "high_readiness") actions.push("If subjective energy agrees, this is a reasonable day for quality work or progressive aerobic volume.");
   if (state === "neutral") actions.push("Use Oura as a baseline check today: pair the scores with subjective energy, soreness and schedule pressure.");
   if ((stats.temperature_deviation ?? 0) > 0.5) actions.push("Watch temperature deviation as context only; illness symptoms should override training plans.");
-  if (weekly?.avg_sleep_hours !== undefined && weekly.avg_sleep_hours < 6.5) actions.push("Weekly sleep average is below 6.5h; recovery improvements may beat training complexity.");
+  if (weekly?.avg_sleep_hours !== undefined && weekly.avg_sleep_hours < 6.5) {
+    actions.push("Weekly sleep average is below 6.5h; recovery improvements may beat training complexity.");
+  }
   actions.push("This is not medical advice; use Oura as trend context and escalate symptoms or abnormal vitals to a clinician.");
   return [...new Set(actions)];
 }
@@ -145,7 +175,7 @@ function aggregateStats(days: ReturnType<typeof dailyStats>[]) {
     avg_readiness_score: round(avg(days.map((day) => day.readiness_score)), 1),
     avg_sleep_score: round(avg(days.map((day) => day.sleep_score)), 1),
     avg_activity_score: round(avg(days.map((day) => day.activity_score)), 1),
-    total_steps: round(sum(days.map((day) => day.steps)), 0),
+    total_steps: days.some((day) => day.steps !== undefined) ? round(sum(days.map((day) => day.steps)), 0) : undefined,
     avg_steps: round(avg(days.map((day) => day.steps)), 0),
     avg_active_calories: round(avg(days.map((day) => day.active_calories)), 0),
     avg_sleep_hours: round(avg(days.map((day) => day.sleep_minutes).map((minutes) => minutes === undefined ? undefined : minutes / 60)), 2),
@@ -258,7 +288,9 @@ function inferBottlenecks(current: ReturnType<typeof aggregateStats>, previous?:
   const sleepDelta = percentDelta(current.avg_sleep_hours, previous?.avg_sleep_hours);
   const readinessDelta = percentDelta(current.avg_readiness_score, previous?.avg_readiness_score);
   if ((current.avg_readiness_score ?? 100) < 65) bottlenecks.push("Average readiness is low; keep intensity recommendations conservative.");
-  if ((current.avg_sleep_hours ?? 0) < 6.5) bottlenecks.push("Average sleep is below 6.5h; recovery may be the limiting factor.");
+  if (current.avg_sleep_hours !== undefined && current.avg_sleep_hours < 6.5) {
+    bottlenecks.push("Average sleep is below 6.5h; recovery may be the limiting factor.");
+  }
   if (readinessDelta !== undefined && readinessDelta < -10) bottlenecks.push("Readiness decreased materially versus the comparison window.");
   if (sleepDelta !== undefined && sleepDelta < -10) bottlenecks.push("Sleep duration decreased materially versus the comparison window.");
   if (current.days_with_hrv < 3) bottlenecks.push("HRV data is sparse; do not over-weight HRV conclusions.");

@@ -84,6 +84,38 @@ try {
     failures.push(error);
   }
 
+  try {
+    await client.list('/usercollection/daily_activity', {
+      after: '2026-08-15T00:00:00Z',
+      before: '2026-08-21T23:59:59Z'
+    });
+    const activityUrl = requestedUrls.at(-1);
+    assert.equal(
+      activityUrl.searchParams.get('start_date'),
+      '2026-08-14',
+      'daily_activity start_date is exclusive on Oura v2; after=08-15 must send 08-14'
+    );
+    assert.equal(activityUrl.searchParams.get('end_date'), '2026-08-21');
+  } catch (error) {
+    failures.push(error);
+  }
+
+  try {
+    await client.list('/usercollection/sleep', {
+      after: '2026-08-20T00:00:00Z',
+      before: '2026-08-20T23:59:59Z'
+    });
+    const sleepUrl = requestedUrls.at(-1);
+    assert.equal(
+      sleepUrl.searchParams.get('start_date'),
+      '2026-08-19',
+      'same-day /sleep is empty; expand start_date back one day'
+    );
+    assert.equal(sleepUrl.searchParams.get('end_date'), '2026-08-20');
+  } catch (error) {
+    failures.push(error);
+  }
+
   const fetchCountBeforeHeartrate = requestedUrls.length;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));

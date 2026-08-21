@@ -87,6 +87,16 @@ const fixtures = [
       bpm: 52,
       source: 'rest'
     }
+  },
+  {
+    title: 'Oura Daily Stress',
+    record: {
+      id: 'stress-1',
+      day: '2026-08-17',
+      day_summary: 'restored',
+      recovery_high: 61,
+      stress_high: 0
+    }
   }
 ];
 

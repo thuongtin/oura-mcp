@@ -173,13 +173,16 @@ This package uses the official Oura Cloud API v2. When this README says `raw`, i
 | Data | Available | Notes |
 |---|:---:|---|
 | Daily readiness score + contributors | ✓ | Requires `daily` scope |
-| Daily sleep score + sleep periods | ✓ | Requires `daily` and/or `sleep` scope |
+| Daily sleep score + sleep periods | ✓ | Requires `daily` scope (Oura has no separate sleep scope) |
 | Sleep stages + timing | ✓ | When Oura returns scored sleep |
 | Daily activity (steps, calories, MET) | ✓ | Requires `daily` scope |
 | Heart-rate time series | ✓ | When ring/membership/scope expose it |
 | HRV (overnight, via daily summaries) | ✓ | Surfaced through readiness contributors |
 | SpO2 (daily averages during sleep) | ✓ | Requires `spo2` scope; supported devices |
-| Workouts + sessions + tags | ✓ | Requires `workout`/`session`/`tag` scopes |
+| Daytime stress + resilience | ✓ | Requires `stress` scope; stress durations shown as rounded minutes |
+| Cardiovascular age + VO2 max | ✓ | Requires `heart_health` scope |
+| Ring configuration + battery | ✓ | Requires `ring_configuration` scope |
+| Workouts + sessions + enhanced tags | ✓ | Requires `workout`/`session`/`tag` scopes; `/tag` is legacy |
 | Personal info (DOB, sex, height, weight) | ✓ | Requires `personal` scope |
 | Continuous sensor telemetry | — | Not exposed by Oura Cloud API |
 
@@ -205,13 +208,13 @@ This package uses the official Oura Cloud API v2. When this README says `raw`, i
 
 **Daily collections** (cursor-paginated with `next_token`, after/before filters and privacy-mode override)
 
-- `oura_list_daily_readiness`, `oura_list_daily_sleep`, `oura_list_daily_activity`, `oura_list_daily_spo2`
+- `oura_list_daily_readiness`, `oura_list_daily_sleep`, `oura_list_daily_activity`, `oura_list_daily_spo2`, `oura_list_daily_stress`, `oura_list_daily_resilience`, `oura_list_daily_cardiovascular_age`
 - Offset ISO inputs keep their written calendar date when mapped to Oura's date-only `start_date` and `end_date` parameters; invalid dates fail before a network request.
 - Oura v2 has no integer page index. Resume with `next_token` from the previous response; if `truncated` is true, raise `limit` or set `all_pages`. See [docs/pagination.md](docs/pagination.md).
 
 **Detailed collections**
 
-- `oura_list_sleep`, `oura_list_workouts`, `oura_list_heartrate`, `oura_list_sessions`, `oura_list_tags`
+- `oura_list_sleep`, `oura_list_sleep_time`, `oura_list_workouts`, `oura_list_heartrate`, `oura_list_sessions`, `oura_list_enhanced_tags`, `oura_list_tags` (legacy `/tag`), `oura_list_rest_mode_periods`, `oura_list_vo2_max`, `oura_list_ring_configuration`, `oura_list_ring_battery`
 
 ## Prompts
 

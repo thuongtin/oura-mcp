@@ -41,8 +41,18 @@ export function applyPrivacy(endpoint: string, payload: unknown, mode: PrivacyMo
 export function normalizeRecord(endpoint: string, record: unknown, mode: PrivacyMode): unknown {
   if (!isObject(record)) return record;
   if (endpoint.includes("personal_info")) return normalizePersonalInfo(record, mode);
-  if (endpoint.includes("daily_activity") || endpoint.includes("workout")) return normalizeOuraActivity(record, mode);
+  if (endpoint.includes("daily_activity")) return normalizeOuraDailyActivity(record, mode);
+  if (endpoint.includes("workout")) return normalizeOuraActivity(record, mode);
   if (endpoint.includes("daily_readiness")) return normalizeOuraReadiness(record, mode);
+  if (endpoint.includes("daily_stress")) return normalizeOuraDailyStress(record, mode);
+  if (endpoint.includes("daily_resilience")) return normalizeDailyResilience(record, mode);
+  if (endpoint.includes("daily_cardiovascular_age")) return normalizeCardiovascularAge(record, mode);
+  if (endpoint.includes("vO2_max") || endpoint.includes("vo2_max")) return normalizeVo2Max(record, mode);
+  if (endpoint.includes("ring_battery")) return normalizeRingBattery(record, mode);
+  if (endpoint.includes("ring_configuration")) return normalizeRingConfiguration(record, mode);
+  if (endpoint.includes("sleep_time")) return normalizeSleepTime(record, mode);
+  if (endpoint.includes("rest_mode")) return normalizeRestMode(record, mode);
+  if (endpoint.includes("enhanced_tag")) return normalizeEnhancedTag(record, mode);
   if (endpoint.includes("sleep")) return normalizeOuraSleep(record, mode);
   if (endpoint.includes("heartrate") || endpoint.includes("spo2")) return normalizeVitals(record, mode);
   if (endpoint.includes("session") || endpoint.includes("tag")) return mode === "summary" ? summarizeUnknown(record) : removeSensitive(record);
@@ -85,6 +95,34 @@ function normalizePersonalInfo(record: Record<string, unknown>, mode: PrivacyMod
   return removeSensitive({ ...record, email: undefined });
 }
 
+const SLEEP_DURATION_KEYS = [
+  "total_sleep_duration",
+  "deep_sleep_duration",
+  "rem_sleep_duration",
+  "light_sleep_duration",
+  "awake_time",
+  "time_in_bed",
+  "latency"
+] as const;
+
+const ACTIVITY_TIME_KEYS = [
+  "high_activity_time",
+  "medium_activity_time",
+  "low_activity_time",
+  "sedentary_time",
+  "resting_time",
+  "non_wear_time"
+] as const;
+
+function convertSecondFields(record: Record<string, unknown>, keys: readonly string[]): Record<string, number> {
+  const converted: Record<string, number> = {};
+  for (const key of keys) {
+    const minutes = secondsToRoundedMinutes(record[key]);
+    if (minutes !== undefined) converted[key] = minutes;
+  }
+  return converted;
+}
+
 function normalizeOuraActivity(record: Record<string, unknown>, mode: PrivacyMode): unknown {
   const base = pickDefined({
     id: record.id,
@@ -102,6 +140,22 @@ function normalizeOuraActivity(record: Record<string, unknown>, mode: PrivacyMod
   return removeSensitive({ ...record, ...base });
 }
 
+function normalizeOuraDailyActivity(record: Record<string, unknown>, mode: PrivacyMode): unknown {
+  const converted = convertSecondFields(record, ACTIVITY_TIME_KEYS);
+  const base = pickDefined({
+    id: record.id,
+    day: record.day,
+    score: record.score,
+    steps: record.steps,
+    active_calories: record.active_calories,
+    total_calories: record.total_calories,
+    equivalent_walking_distance: record.equivalent_walking_distance,
+    ...converted
+  });
+  if (mode === "summary") return base;
+  return removeSensitive({ ...record, ...base });
+}
+
 function normalizeOuraReadiness(record: Record<string, unknown>, mode: PrivacyMode): unknown {
   const base = pickDefined({
     id: record.id,
@@ -114,17 +168,137 @@ function normalizeOuraReadiness(record: Record<string, unknown>, mode: PrivacyMo
   return removeSensitive({ ...record, ...base });
 }
 
+/**
+ * Oura Cloud v2 sends recovery_high / stress_high in seconds. Tool output uses
+ * rounded minutes so agents do not treat the raw second counts as minute totals.
+ * day_summary is the upstream enum: restored | normal | stressful.
+ */
+export function secondsToRoundedMinutes(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return Math.round(value / 60);
+}
+
+function normalizeOuraDailyStress(record: Record<string, unknown>, mode: PrivacyMode): unknown {
+  const base = pickDefined({
+    id: record.id,
+    day: record.day,
+    day_summary: record.day_summary,
+    recovery_high: secondsToRoundedMinutes(record.recovery_high),
+    stress_high: secondsToRoundedMinutes(record.stress_high)
+  });
+  if (mode === "summary") return base;
+  return removeSensitive({ ...record, ...base });
+}
+
 function normalizeOuraSleep(record: Record<string, unknown>, mode: PrivacyMode): unknown {
+  const converted = convertSecondFields(record, SLEEP_DURATION_KEYS);
   const base = pickDefined({
     id: record.id,
     day: record.day,
     score: record.score,
+    type: record.type,
     bedtime_start: record.bedtime_start,
     bedtime_end: record.bedtime_end,
-    total_sleep_duration: record.total_sleep_duration,
     efficiency: record.efficiency,
     average_hrv: record.average_hrv,
-    lowest_heart_rate: record.lowest_heart_rate
+    lowest_heart_rate: record.lowest_heart_rate,
+    ...converted
+  });
+  if (mode === "summary") return base;
+  return removeSensitive({ ...record, ...base });
+}
+
+function normalizeDailyResilience(record: Record<string, unknown>, mode: PrivacyMode): unknown {
+  const base = pickDefined({
+    id: record.id,
+    day: record.day,
+    level: record.level,
+    contributors: record.contributors
+  });
+  if (mode === "summary") return base;
+  return removeSensitive({ ...record, ...base });
+}
+
+function normalizeCardiovascularAge(record: Record<string, unknown>, mode: PrivacyMode): unknown {
+  const base = pickDefined({
+    id: record.id,
+    day: record.day,
+    vascular_age: record.vascular_age
+  });
+  if (mode === "summary") return base;
+  return removeSensitive({ ...record, ...base });
+}
+
+function normalizeVo2Max(record: Record<string, unknown>, mode: PrivacyMode): unknown {
+  const base = pickDefined({
+    id: record.id,
+    day: record.day,
+    vo2_max: record.vo2_max,
+    timestamp: record.timestamp
+  });
+  if (mode === "summary") return base;
+  return removeSensitive({ ...record, ...base });
+}
+
+function normalizeRingConfiguration(record: Record<string, unknown>, mode: PrivacyMode): unknown {
+  const base = pickDefined({
+    id: mode === "summary" ? undefined : record.id,
+    hardware_type: record.hardware_type,
+    firmware_version: record.firmware_version,
+    color: record.color,
+    design: record.design,
+    size: record.size,
+    set_up_at: record.set_up_at
+  });
+  if (mode === "summary") return base;
+  return removeSensitive({ ...record, ...base });
+}
+
+function normalizeRingBattery(record: Record<string, unknown>, mode: PrivacyMode): unknown {
+  const base = pickDefined({
+    timestamp: record.timestamp,
+    level: record.level,
+    charging: record.charging,
+    in_charger: record.in_charger
+  });
+  if (mode === "summary") return base;
+  return removeSensitive({ ...record, ...base });
+}
+
+function normalizeSleepTime(record: Record<string, unknown>, mode: PrivacyMode): unknown {
+  const base = pickDefined({
+    id: record.id,
+    day: record.day,
+    recommendation: record.recommendation,
+    status: record.status,
+    optimal_bedtime: record.optimal_bedtime
+  });
+  if (mode === "summary") return base;
+  return removeSensitive({ ...record, ...base });
+}
+
+function normalizeRestMode(record: Record<string, unknown>, mode: PrivacyMode): unknown {
+  const base = pickDefined({
+    id: record.id,
+    start_day: record.start_day,
+    end_day: record.end_day,
+    start_time: record.start_time,
+    end_time: record.end_time
+  });
+  if (mode === "summary") return base;
+  return removeSensitive({ ...record, ...base });
+}
+
+function normalizeEnhancedTag(record: Record<string, unknown>, mode: PrivacyMode): unknown {
+  const base = pickDefined({
+    id: record.id,
+    start_day: record.start_day,
+    start_time: record.start_time,
+    end_day: record.end_day,
+    end_time: record.end_time,
+    tag_type_code: record.tag_type_code,
+    custom_name: record.custom_name,
+    comment: mode === "summary" ? undefined : record.comment
   });
   if (mode === "summary") return base;
   return removeSensitive({ ...record, ...base });

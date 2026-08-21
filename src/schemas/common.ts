@@ -23,7 +23,7 @@ export const DateTimeSchema = z.string()
  * How to reach the NEWEST record of a domain, which is never what `limit` gives you.
  *
  * This text is per-tool on purpose. It used to live in the shared schema, which meant all
- * nine oura_list_* tools told the agent to read `oura://latest/readiness` — the only
+ * collection list tools told the agent to read `oura://latest/readiness` — the only
  * latest resource that exists. An agent listing sleep was sent to readiness data, which
  * cannot answer its question.
  */
@@ -37,7 +37,7 @@ function recencyRoute(latestResourceUri?: string): string {
  * Collection input for one oura_list_* tool.
  *
  * `latestResourceUri` names the oura://latest/... resource that answers "most recent" for
- * THIS endpoint, when one exists. Everything else is identical across the nine tools.
+ * THIS endpoint, when one exists. Everything else is identical across the collection tools.
  */
 export function collectionInputSchema(latestResourceUri?: string, rangeMode: OuraRangeMode = "date") {
   const afterHint = rangeMode === "datetime"
@@ -156,7 +156,10 @@ export const CollectionOutputSchema = z.object({
     .describe("Opaque Oura v2 cursor to resume from. Pass this back as input next_token with the same after/before window. Present only when more records exist upstream AND this call did not locally drop fetched records (truncated is false). When truncated is true, next_token is omitted: raise limit or set all_pages instead of following a cursor, which would skip the dropped records. Never increment a page number."),
   has_more: z.boolean().describe("True when more records exist beyond this response, either upstream (a resumable next_token) or because the limit cap dropped records (truncated). If truncated is true, raise limit or set all_pages; if next_token is present, pass it back."),
   truncated: z.boolean().describe("True when the limit cap dropped records that had already been fetched. Raise limit or set all_pages (or narrow after/before) to see them. next_token is omitted in this case so a resume cannot skip those rows."),
-  pages_fetched: z.number().int().nonnegative()
+  pages_fetched: z.number().int().nonnegative(),
+  duration_unit: z.literal("minutes").optional()
+    .describe("Present on Daily Stress structured/summary output: recovery_high and stress_high were converted from Oura seconds to rounded minutes."),
+  note: z.string().optional()
 }).strict();
 
 export const CacheStatusOutputSchema = z.object({

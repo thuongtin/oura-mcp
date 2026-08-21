@@ -11,6 +11,11 @@
 
 - HTTP bearer auth via `OURA_MCP_HTTP_TOKEN`. Non-loopback binds refuse to start without it.
 - `linux/arm64` Dockerfile and RouterOS container deploy notes for MikroTik.
+- `oura_list_daily_stress` for Oura Cloud v2 `/usercollection/daily_stress`. Durations are converted from seconds to rounded minutes; `day_summary` keeps Oura's `restored` / `normal` / `stressful` labels. HTTP 403 names the missing `stress` scope.
+- Collection wrappers for `enhanced_tag`, `daily_resilience`, `daily_cardiovascular_age`, `vO2_max`, `ring_configuration`, `ring_battery_level`, `sleep_time`, and `rest_mode_period`. `oura_list_tags` remains as the legacy `/tag` tool.
+- `oura_daily_summary` / `oura_weekly_summary` read `spo2_percentage.average` and take night stats from `type=long_sleep`.
+- Sleep period durations and daily activity `*_time` fields convert Oura seconds to rounded minutes in structured/summary.
+- `oura_daily_summary` / `oura_weekly_summary` query `/sleep` and `/daily_activity` with a non-degenerate date window (same-day start=end is empty on those endpoints; activity `start_date` is exclusive). Night stats still require `type=long_sleep`. Missing steps/HRV no longer become `0`.
 
 ## 0.7.0 - 2026-08-13
 
