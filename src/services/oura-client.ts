@@ -4,7 +4,7 @@ import type { OuraConfig, OuraTokenSet } from "../types.js";
 import { disabledCacheStatus, OuraCache, type CacheStatus } from "./cache.js";
 import { fetchWithCache, getCacheStats } from "./http-cache.js";
 import { fetchWithRetry as fetchWithRetryMiddleware } from "./http-retry.js";
-import { filterRecordsByTimeWindow, hasClock, ouraRangeQuery, rangeModeFor } from "./oura-range.js";
+import { filterRecordsByDay, filterRecordsByTimeWindow, hasClock, ouraRangeQuery, rangeModeFor, requestedCalendarDays } from "./oura-range.js";
 import { mostRecentRecord } from "./recency.js";
 import { redactErrorMessage } from "./redaction.js";
 import { TokenStore } from "./token-store.js";
@@ -150,6 +150,7 @@ export class OuraClient {
     let nextToken: string | undefined = params.next_token;
     let pages = 0;
     const range = ouraRangeQuery(path, params);
+    const keepDays = requestedCalendarDays(params);
 
     while (pages < maxPages) {
       const payload = await this.get(path, {
@@ -159,12 +160,16 @@ export class OuraClient {
       collected.push(...extractRecords(payload));
       pages += 1;
       nextToken = extractNextToken(payload);
-      const visible = timeFilter ? filterRecordsByTimeWindow(collected, params) : collected;
+      const visible = timeFilter
+        ? filterRecordsByTimeWindow(collected, params)
+        : filterRecordsByDay(collected, keepDays);
       if (!nextToken || visible.length >= limit || (!params.all_pages && !timeFilter)) break;
       if (timeFilter && visible.length >= limit) break;
     }
 
-    const visible = timeFilter ? filterRecordsByTimeWindow(collected, params) : collected;
+    const visible = timeFilter
+      ? filterRecordsByTimeWindow(collected, params)
+      : filterRecordsByDay(collected, keepDays);
     const records = visible.slice(0, limit);
     const truncated = visible.length > limit;
     return {

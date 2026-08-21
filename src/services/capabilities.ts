@@ -31,9 +31,11 @@ export function buildCapabilities() {
     supported_data: [
       { name: "Personal info", examples: ["age", "height", "weight", "biological sex", "email when granted"], tools: ["oura_get_personal_info"] },
       { name: "Daily recovery context", examples: ["readiness score", "sleep score", "activity score", "contributors"], tools: ["oura_list_daily_readiness", "oura_list_daily_sleep", "oura_list_daily_activity"] },
-      { name: "Sleep", examples: ["sleep periods", "duration", "stages", "efficiency", "average HRV"], tools: ["oura_list_sleep", "oura_daily_summary", "oura_weekly_summary", "oura_wellness_context"] },
-      { name: "Heart and oxygen", examples: ["heart-rate time series", "lowest heart rate", "average HRV", "daily SpO2"], tools: ["oura_list_heartrate", "oura_list_daily_spo2"] },
-      { name: "Workouts and context", examples: ["workout summaries", "sessions", "tags"], tools: ["oura_list_workouts", "oura_list_sessions", "oura_list_tags"] }
+      { name: "Daytime stress", examples: ["day summary restored/normal/stressful", "minutes in high stress", "minutes in high recovery", "resilience level"], tools: ["oura_list_daily_stress", "oura_list_daily_resilience"] },
+      { name: "Sleep", examples: ["sleep periods", "duration", "stages", "efficiency", "average HRV", "suggested bedtime"], tools: ["oura_list_sleep", "oura_list_sleep_time", "oura_daily_summary", "oura_weekly_summary", "oura_wellness_context"] },
+      { name: "Heart and oxygen", examples: ["heart-rate time series", "lowest heart rate", "average HRV", "daily SpO2", "vascular age", "VO2 max"], tools: ["oura_list_heartrate", "oura_list_daily_spo2", "oura_list_daily_cardiovascular_age", "oura_list_vo2_max"] },
+      { name: "Workouts and context", examples: ["workout summaries", "sessions", "enhanced tags", "legacy tags", "rest mode"], tools: ["oura_list_workouts", "oura_list_sessions", "oura_list_enhanced_tags", "oura_list_tags", "oura_list_rest_mode_periods"] },
+      { name: "Ring device", examples: ["hardware type", "firmware", "battery level"], tools: ["oura_list_ring_configuration", "oura_list_ring_battery"] }
     ],
     recommended_agent_flow: [
       "Call oura_agent_manifest when installing or operating inside a server agent such as Hermes.",

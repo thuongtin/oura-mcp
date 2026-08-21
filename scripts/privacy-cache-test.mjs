@@ -42,6 +42,79 @@ const futureStructured = applyPrivacy('/usercollection/daily_readiness', {
 assert.deepEqual(futureStructured.contributors, { recovery_index: 91 });
 assert.deepEqual(futureStructured.futureMetrics, { cardiovascularAge: 37 });
 
+const stressStructured = applyPrivacy('/usercollection/daily_stress', {
+  id: 'stress-1',
+  day: '2026-08-17',
+  day_summary: 'restored',
+  recovery_high: 3660,
+  stress_high: 90,
+  email: 'hidden@example.com'
+}, 'structured');
+assert.equal(stressStructured.day_summary, 'restored');
+assert.equal(stressStructured.recovery_high, 61);
+assert.equal(stressStructured.stress_high, 2);
+assert.equal(stressStructured.email, undefined);
+
+const stressSummary = applyPrivacy('/usercollection/daily_stress', {
+  id: 'stress-1',
+  day: '2026-08-17',
+  day_summary: 'stressful',
+  recovery_high: 0,
+  stress_high: 1800
+}, 'summary');
+assert.equal(stressSummary.day_summary, 'stressful');
+assert.equal(stressSummary.recovery_high, 0);
+assert.equal(stressSummary.stress_high, 30);
+assert.equal(stressSummary.email, undefined);
+
+const stressRaw = applyPrivacy('/usercollection/daily_stress', {
+  id: 'stress-1',
+  recovery_high: 3660,
+  stress_high: 90
+}, 'raw');
+assert.equal(stressRaw.recovery_high, 3660);
+assert.equal(stressRaw.stress_high, 90);
+
+const sleepStructured = applyPrivacy('/usercollection/sleep', {
+  id: 'sleep-1',
+  type: 'long_sleep',
+  total_sleep_duration: 3660,
+  awake_time: 90,
+  time_in_bed: 3720,
+  latency: 30,
+  deep_sleep_duration: 1800
+}, 'structured');
+assert.equal(sleepStructured.type, 'long_sleep');
+assert.equal(sleepStructured.total_sleep_duration, 61);
+assert.equal(sleepStructured.awake_time, 2);
+assert.equal(sleepStructured.time_in_bed, 62);
+assert.equal(sleepStructured.latency, 1);
+assert.equal(sleepStructured.deep_sleep_duration, 30);
+
+const sleepRaw = applyPrivacy('/usercollection/sleep', {
+  total_sleep_duration: 3660,
+  awake_time: 90
+}, 'raw');
+assert.equal(sleepRaw.total_sleep_duration, 3660);
+assert.equal(sleepRaw.awake_time, 90);
+
+const activityTimes = applyPrivacy('/usercollection/daily_activity', {
+  id: 'act-1',
+  steps: 100,
+  sedentary_time: 3600,
+  high_activity_time: 90,
+  non_wear_time: 0
+}, 'structured');
+assert.equal(activityTimes.steps, 100);
+assert.equal(activityTimes.sedentary_time, 60);
+assert.equal(activityTimes.high_activity_time, 2);
+assert.equal(activityTimes.non_wear_time, 0);
+
+const activityRaw = applyPrivacy('/usercollection/daily_activity', {
+  sedentary_time: 3600
+}, 'raw');
+assert.equal(activityRaw.sedentary_time, 3600);
+
 const streams = normalizeStreams({ heartrate: { data: [120, 121] }, latlng: { data: [[1, 2]] } }, 'structured', false);
 assert.equal(streams.latlng, undefined);
 assert.deepEqual(streams.heartrate.data, [120, 121]);

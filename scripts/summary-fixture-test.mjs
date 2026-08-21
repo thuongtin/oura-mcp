@@ -5,21 +5,25 @@ import { buildWellnessContext } from '../dist/services/context.js';
 const today = new Date().toISOString().slice(0, 10);
 
 const fakeClient = {
-  async get(endpoint) {
+  async get(endpoint, params = {}) {
+    const day = params.end_date ?? today;
     if (endpoint.includes('/daily_activity')) {
-      return { data: [{ day: today, score: 82, steps: 9000, active_calories: 520, total_calories: 2400, equivalent_walking_distance: 7200 }] };
+      return { data: [{ day, score: 82, steps: 9000, active_calories: 520, total_calories: 2400, equivalent_walking_distance: 7200 }] };
     }
     if (endpoint.includes('/daily_sleep')) {
-      return { data: [{ day: today, score: 88 }] };
+      return { data: [{ day, score: 88 }] };
     }
     if (endpoint.includes('/daily_readiness')) {
-      return { data: [{ day: today, score: 84, temperature_deviation: 0.1, contributors: { recovery_index: 90 } }] };
+      return { data: [{ day, score: 84, temperature_deviation: 0.1, contributors: { recovery_index: 90 } }] };
     }
     if (endpoint.includes('/usercollection/sleep')) {
-      return { data: [{ day: today, total_sleep_duration: 25800, efficiency: 91, lowest_heart_rate: 58, average_hrv: 48.2 }] };
+      return { data: [
+        { day, type: 'rest', total_sleep_duration: 600, efficiency: 10, lowest_heart_rate: 90, average_hrv: 0 },
+        { day, type: 'long_sleep', total_sleep_duration: 25800, efficiency: 91, lowest_heart_rate: 58, average_hrv: 48.2 }
+      ] };
     }
     if (endpoint.includes('/daily_spo2')) {
-      return { data: [{ day: today, spo2_percentage: 97.2 }] };
+      return { data: [{ day, spo2_percentage: { average: 97.2 } }] };
     }
     throw new Error(`unexpected endpoint ${endpoint}`);
   }
@@ -30,6 +34,8 @@ assert.equal(daily.kind, 'daily_summary');
 assert.equal(daily.scorecard.steps, 9000);
 assert.equal(daily.scorecard.sleep_minutes, 430);
 assert.equal(daily.scorecard.lowest_heart_rate, 58);
+assert.equal(daily.scorecard.hrv_rmssd, 48.2);
+assert.equal(daily.scorecard.spo2_percentage, 97.2);
 assert.equal(daily.scorecard.readiness_score, 84);
 assert.ok(daily.diagnostic.action_candidates.length >= 2);
 
@@ -38,7 +44,10 @@ assert.equal(weekly.kind, 'weekly_summary');
 assert.equal(weekly.scorecard.current.days, 7);
 assert.equal(weekly.scorecard.current.avg_sleep_hours, 7.17);
 assert.equal(weekly.scorecard.current.avg_readiness_score, 84);
+assert.equal(weekly.scorecard.current.total_steps, 63000);
+assert.equal(weekly.scorecard.current.days_with_hrv, 7);
 assert.ok(weekly.diagnostic.bottlenecks.length >= 1);
+assert.ok(!weekly.diagnostic.bottlenecks.some((item) => /HRV data is sparse/i.test(item)));
 
 const context = await buildWellnessContext(fakeClient, { days: 7, timezone: 'UTC' });
 assert.equal(context.source, 'oura');

@@ -69,13 +69,19 @@ function syntheticRecord(index) {
  * a request whose start_date is NEWER than that floor comes back empty, which is what a
  * ring that has not synced recently looks like.
  */
-let apiState = { total: 0, pageSize: 0, emptyBeforeStartDate: undefined };
+let apiState = { total: 0, pageSize: 0, emptyBeforeStartDate: undefined, status: 200 };
 const requestedUrls = [];
 
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (input) => {
   const url = new URL(String(input));
   requestedUrls.push(url);
+  if (apiState.status && apiState.status !== 200) {
+    return new Response(JSON.stringify({ detail: 'Forbidden' }), {
+      status: apiState.status,
+      headers: { 'content-type': 'application/json' }
+    });
+  }
   const startDate = url.searchParams.get('start_date');
   if (apiState.emptyBeforeStartDate && startDate && startDate >= apiState.emptyBeforeStartDate) {
     return Response.json({ data: [] });
@@ -83,15 +89,22 @@ globalThis.fetch = async (input) => {
   const cursor = Number(url.searchParams.get('next_token') ?? '0');
   const pageSize = apiState.pageSize;
   const slice = [];
-  for (let i = cursor; i < Math.min(cursor + pageSize, apiState.total); i += 1) slice.push(syntheticRecord(i));
+  for (let i = cursor; i < Math.min(cursor + pageSize, apiState.total); i += 1) {
+    const record = syntheticRecord(i);
+    if (url.pathname.includes('/daily_stress')) {
+      slice.push({ ...record, day_summary: 'restored', recovery_high: 3660, stress_high: 90 });
+    } else {
+      slice.push(record);
+    }
+  }
   const nextCursor = cursor + pageSize;
   const body = { data: slice };
   if (nextCursor < apiState.total) body.next_token = String(nextCursor);
   return Response.json(body);
 };
 
-function serve(total, pageSize, emptyBeforeStartDate) {
-  apiState = { total, pageSize, emptyBeforeStartDate };
+function serve(total, pageSize, emptyBeforeStartDate, status = 200) {
+  apiState = { total, pageSize, emptyBeforeStartDate, status };
   requestedUrls.length = 0;
 }
 
@@ -315,14 +328,14 @@ try {
 
   // ---------------------------------------------------------------------------
   // (f) ROUND 3: the `limit` description lives in the SHARED CollectionInputSchema, so
-  // the readiness-specific recency pointer was served to all 9 oura_list_* tools. An
+  // the readiness-specific recency pointer was served to all collection list tools. An
   // agent reading `oura_list_sleep` was told to read `oura://latest/readiness` — a
   // resource that cannot answer its question, and the only oura://latest/ resource that
   // exists. Each tool must name a recency route that is true for ITS OWN domain.
   // ---------------------------------------------------------------------------
   const listTools = toolList.tools.filter((tool) => tool.name.startsWith('oura_list_'));
   check('all collection tools are inspected', () => {
-    assert.equal(listTools.length, 9, `expected 9 oura_list_* tools, found ${listTools.length}`);
+    assert.equal(listTools.length, 18, `expected 18 oura_list_* tools, found ${listTools.length}`);
   });
 
   for (const tool of listTools) {
@@ -432,6 +445,66 @@ try {
     assert.equal(done.truncated, false);
     assert.equal(done.next_token, undefined);
     assert.equal(done.count, 12);
+  });
+
+  serve(1, 10);
+  const stress = await client.callTool({
+    name: 'oura_list_daily_stress',
+    arguments: { response_format: 'json' }
+  });
+  check('daily_stress converts Oura seconds to rounded minutes and keeps day_summary', () => {
+    assert.ok(!stress.isError, `oura_list_daily_stress failed: ${JSON.stringify(stress.content)}`);
+    assert.equal(stress.structuredContent.duration_unit, 'minutes');
+    assert.equal(stress.structuredContent.records[0].day_summary, 'restored');
+    assert.equal(stress.structuredContent.records[0].recovery_high, 61);
+    assert.equal(stress.structuredContent.records[0].stress_high, 2);
+    assert.equal(stress.structuredContent.note, undefined);
+  });
+
+  serve(0, 10);
+  const emptyStress = await client.callTool({
+    name: 'oura_list_daily_stress',
+    arguments: { response_format: 'json' }
+  });
+  check('daily_stress empty window explains missing Daytime Stress data', () => {
+    assert.ok(!emptyStress.isError);
+    assert.equal(emptyStress.structuredContent.count, 0);
+    assert.match(emptyStress.structuredContent.note ?? '', /Daytime Stress/);
+  });
+
+  serve(1, 10, undefined, 403);
+  const forbiddenStress = await client.callTool({
+    name: 'oura_list_daily_stress',
+    arguments: { response_format: 'json' }
+  });
+  check('daily_stress 403 names the stress scope and re-auth path', () => {
+    assert.equal(forbiddenStress.isError, true);
+    const message = forbiddenStress.structuredContent?.note ?? forbiddenStress.structuredContent?.error ?? JSON.stringify(forbiddenStress.content);
+    assert.match(String(message), /stress/i);
+    assert.match(String(message), /re-authorize|revoke/i);
+  });
+
+  serve(0, 10);
+  const emptyVo2 = await client.callTool({
+    name: 'oura_list_vo2_max',
+    arguments: { response_format: 'json' }
+  });
+  check('vo2_max empty window explains missing records', () => {
+    assert.ok(!emptyVo2.isError);
+    assert.equal(emptyVo2.structuredContent.count, 0);
+    assert.match(emptyVo2.structuredContent.note ?? '', /VO2 Max/);
+  });
+
+  serve(1, 10, undefined, 403);
+  const forbiddenVo2 = await client.callTool({
+    name: 'oura_list_vo2_max',
+    arguments: { response_format: 'json' }
+  });
+  check('vo2_max 403 names the heart_health scope', () => {
+    assert.equal(forbiddenVo2.isError, true);
+    const message = forbiddenVo2.structuredContent?.note ?? JSON.stringify(forbiddenVo2.content);
+    assert.match(String(message), /heart_health/);
+    assert.match(String(message), /re-authorize|revoke/i);
   });
 
   if (failures.length) throw new AggregateError(failures, 'Oura pagination/limit contract regressions');

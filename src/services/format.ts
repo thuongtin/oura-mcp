@@ -59,7 +59,18 @@ const PREVIEW_KEYS = [
   "spo2_percentage",
   "breathing_disturbance_index",
   "temperature_deviation",
-  "temperature_trend_deviation"
+  "temperature_trend_deviation",
+  "day_summary",
+  "recovery_high",
+  "stress_high",
+  "level",
+  "vascular_age",
+  "vo2_max",
+  "hardware_type",
+  "firmware_version",
+  "tag_type_code",
+  "recommendation",
+  "status"
 ];
 
 export function formatCollection(title: string, records: unknown[], meta: Record<string, unknown>): string {

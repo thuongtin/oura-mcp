@@ -101,13 +101,33 @@ async function clearPkceVerifier(): Promise<void> {
   });
 }
 
-function registerCollectionTool(server: McpServer, name: string, title: string, endpoint: string, description: string, latestResourceUri?: string): void {
+type CollectionToolOptions = {
+  latestResourceUri?: string;
+  emptyNote?: string;
+  durationUnitMinutes?: boolean;
+  mapError?: (error: Error) => string;
+};
+
+function collectionToolOptions(value?: string | CollectionToolOptions): CollectionToolOptions {
+  if (typeof value === "string") return { latestResourceUri: value };
+  return value ?? {};
+}
+
+function registerCollectionTool(
+  server: McpServer,
+  name: string,
+  title: string,
+  endpoint: string,
+  description: string,
+  latestResourceUriOrOptions?: string | CollectionToolOptions
+): void {
+  const options = collectionToolOptions(latestResourceUriOrOptions);
   server.registerTool(
     name,
     {
       title,
       description,
-      inputSchema: collectionInputSchema(latestResourceUri, rangeModeFor(endpoint)).shape,
+      inputSchema: collectionInputSchema(options.latestResourceUri, rangeModeFor(endpoint)).shape,
       outputSchema: CollectionOutputSchema.shape,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }
     },
@@ -116,14 +136,55 @@ function registerCollectionTool(server: McpServer, name: string, title: string, 
         const config = getConfig();
         const privacyMode = resolvePrivacyMode(config, params.privacy_mode, { explicit_user_intent: (params as { explicit_user_intent?: boolean }).explicit_user_intent });
         const result = await new OuraClient(config).list(endpoint, params);
-        const output = buildCollectionOutput(endpoint, privacyMode, result);
+        const output = {
+          ...buildCollectionOutput(endpoint, privacyMode, result),
+          ...(options.durationUnitMinutes && privacyMode !== "raw" ? { duration_unit: "minutes" as const } : {}),
+          ...(result.records.length === 0 && options.emptyNote ? { note: options.emptyNote } : {})
+        };
         return makeResponse(output, params.response_format, formatCollection(title, output.records, output));
       } catch (error) {
-        return makeError((error as Error).message);
+        const mapped = options.mapError ? options.mapError(error as Error) : (error as Error).message;
+        if (!options.mapError) return makeError(mapped);
+        // Collection tools advertise CollectionOutputSchema, so an `{ error }` payload
+        // is dropped by MCP structured-content validation. Keep isError and fill the
+        // collection shape so the mapped message actually reaches the agent.
+        const failed = {
+          endpoint,
+          privacy_mode: "structured" as const,
+          count: 0,
+          records: [] as unknown[],
+          has_more: false,
+          truncated: false,
+          pages_fetched: 0,
+          note: mapped
+        };
+        return {
+          ...makeError(mapped),
+          structuredContent: failed
+        };
       }
     }
   );
 }
+
+function emptyNote(label: string): string {
+  return `No ${label} records in this window. The ring, membership, or day may not expose this Oura data type yet. This is not medical advice.`;
+}
+
+function mapScopeError(scope: string, label: string): (error: Error) => string {
+  return (error: Error) => {
+    if (/\bHTTP 403\b/.test(error.message)) {
+      return `Oura API HTTP 403: ${label} requires the "${scope}" OAuth scope (and an active Oura membership). If this app was authorized without that scope, revoke access with oura_revoke_access (or disconnect the app in Oura), then re-authorize so the consent screen includes ${scope}.`;
+    }
+    return error.message;
+  };
+}
+
+const scopedCollection = (scope: string, label: string, extra: CollectionToolOptions = {}): CollectionToolOptions => ({
+  emptyNote: emptyNote(label),
+  mapError: mapScopeError(scope, label),
+  ...extra
+});
 
 export function registerOuraTools(server: McpServer): void {
   server.registerTool("oura_data_inventory", {
@@ -465,15 +526,24 @@ export function registerOuraTools(server: McpServer): void {
     }
   });
 
-  registerCollectionTool(server, "oura_list_daily_activity", "Oura Daily Activity", "/usercollection/daily_activity", "List daily Oura activity summaries. Supports start/end date filters through after/before and Oura cursor pagination.");
-  registerCollectionTool(server, "oura_list_daily_sleep", "Oura Daily Sleep", "/usercollection/daily_sleep", "List daily Oura sleep score summaries. Requires daily or sleep data access granted by the user. Not medical advice.");
+  registerCollectionTool(server, "oura_list_daily_activity", "Oura Daily Activity", "/usercollection/daily_activity", "List daily Oura activity summaries. Activity *_time fields are converted from Oura seconds to rounded minutes. Supports start/end date filters through after/before and Oura cursor pagination.", { durationUnitMinutes: true });
+  registerCollectionTool(server, "oura_list_daily_sleep", "Oura Daily Sleep", "/usercollection/daily_sleep", "List daily Oura sleep score summaries. Requires the daily scope (Oura has no separate sleep OAuth scope). Not medical advice.");
   registerCollectionTool(server, "oura_list_daily_readiness", "Oura Daily Readiness", "/usercollection/daily_readiness", "List Oura readiness summaries and contributors. Requires daily scope. Not medical advice.", "oura://latest/readiness");
-  registerCollectionTool(server, "oura_list_sleep", "Oura Sleep Periods", "/usercollection/sleep", "List detailed Oura sleep period records, including sleep stages and timing where available. Requires the daily scope (Oura has no separate sleep OAuth scope). Not medical advice.");
+  registerCollectionTool(server, "oura_list_sleep", "Oura Sleep Periods", "/usercollection/sleep", "List detailed Oura sleep period records, including sleep stages, type (long_sleep/nap/rest), and timing. Durations are converted from Oura seconds to rounded minutes. Requires the daily scope (Oura has no separate sleep OAuth scope). Not medical advice.", { durationUnitMinutes: true });
+  registerCollectionTool(server, "oura_list_sleep_time", "Oura Sleep Time", "/usercollection/sleep_time", "List Oura suggested bedtime windows (optimal_bedtime, recommendation, status). Requires daily scope. Not medical advice.", scopedCollection("daily", "Sleep Time"));
   registerCollectionTool(server, "oura_list_workouts", "Oura Workouts", "/usercollection/workout", "List Oura workout summaries. Requires workout scope.");
   registerCollectionTool(server, "oura_list_heartrate", "Oura Heart Rate", "/usercollection/heartrate", "List Oura heart-rate time-series records where the user's ring and membership expose them. Requires heartrate scope. Not medical advice.");
   registerCollectionTool(server, "oura_list_daily_spo2", "Oura Daily SpO2", "/usercollection/daily_spo2", "List daily Oura SpO2 averages recorded during sleep when available. Requires spo2 scope. Not medical advice.");
-  registerCollectionTool(server, "oura_list_sessions", "Oura Sessions", "/usercollection/session", "List guided and unguided Oura app sessions when the user granted session scope.");
-  registerCollectionTool(server, "oura_list_tags", "Oura Tags", "/usercollection/tag", "List user-entered Oura tags when the user granted tag scope.");
+  registerCollectionTool(server, "oura_list_daily_stress", "Oura Daily Stress", "/usercollection/daily_stress", "List Oura daytime stress summaries. recovery_high and stress_high are converted from Oura seconds to rounded minutes; day_summary is restored, normal, or stressful. Requires the stress scope. Not medical advice.", scopedCollection("stress", "Daytime Stress", { durationUnitMinutes: true }));
+  registerCollectionTool(server, "oura_list_daily_resilience", "Oura Daily Resilience", "/usercollection/daily_resilience", "List Oura daily resilience level and contributors. Requires the stress scope. Not medical advice.", scopedCollection("stress", "Daily Resilience"));
+  registerCollectionTool(server, "oura_list_daily_cardiovascular_age", "Oura Daily Cardiovascular Age", "/usercollection/daily_cardiovascular_age", "List Oura daily vascular age estimates. Requires the heart_health scope. Not medical advice.", scopedCollection("heart_health", "Daily Cardiovascular Age"));
+  registerCollectionTool(server, "oura_list_vo2_max", "Oura VO2 Max", "/usercollection/vO2_max", "List Oura VO2 max estimates. Path is /usercollection/vO2_max as in Oura Cloud v2. Requires the heart_health scope. Not medical advice.", scopedCollection("heart_health", "VO2 Max"));
+  registerCollectionTool(server, "oura_list_ring_configuration", "Oura Ring Configuration", "/usercollection/ring_configuration", "List Oura ring hardware records (firmware, size, color, design). Requires the ring_configuration scope.", scopedCollection("ring_configuration", "Ring Configuration"));
+  registerCollectionTool(server, "oura_list_ring_battery", "Oura Ring Battery", "/usercollection/ring_battery_level", "List Oura ring battery level samples. after/before are sent as start_datetime/end_datetime. Requires the ring_configuration scope.", scopedCollection("ring_configuration", "Ring Battery"));
+  registerCollectionTool(server, "oura_list_rest_mode_periods", "Oura Rest Mode Periods", "/usercollection/rest_mode_period", "List Oura Rest Mode periods when present. Requires daily scope. Not medical advice.", scopedCollection("daily", "Rest Mode"));
+  registerCollectionTool(server, "oura_list_sessions", "Oura Sessions", "/usercollection/session", "List guided and unguided Oura app sessions when the user granted session scope.", scopedCollection("session", "Sessions"));
+  registerCollectionTool(server, "oura_list_enhanced_tags", "Oura Enhanced Tags", "/usercollection/enhanced_tag", "List Oura enhanced tags (tag_type_code, start/end, custom_name, comment). Preferred over oura_list_tags. Requires tag scope.", scopedCollection("tag", "Enhanced Tags"));
+  registerCollectionTool(server, "oura_list_tags", "Oura Tags (legacy)", "/usercollection/tag", "Legacy Oura tags endpoint (/usercollection/tag). Prefer oura_list_enhanced_tags. Requires tag scope. Kept for compatibility.", scopedCollection("tag", "legacy tags"));
 
   server.registerTool("oura_connection_status", {
     title: "Oura Connection Status",

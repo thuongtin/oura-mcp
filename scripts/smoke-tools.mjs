@@ -1,13 +1,21 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+
+const smokeHome = mkdtempSync(join(tmpdir(), 'oura-mcp-smoke-'));
 
 const expectedTools = [
   'oura_agent_manifest', 'oura_cache_status', 'oura_capabilities', 'oura_connection_status',
   'oura_daily_summary', 'oura_data_inventory', 'oura_demo', 'oura_exchange_code',
-  'oura_get_auth_url', 'oura_get_personal_info', 'oura_list_daily_activity', 'oura_list_daily_readiness',
-  'oura_list_daily_sleep', 'oura_list_daily_spo2', 'oura_list_heartrate', 'oura_list_sessions',
-  'oura_list_sleep', 'oura_list_tags', 'oura_list_workouts', 'oura_onboarding',
+  'oura_get_auth_url', 'oura_get_personal_info', 'oura_list_daily_activity', 'oura_list_daily_cardiovascular_age',
+  'oura_list_daily_readiness', 'oura_list_daily_resilience',
+  'oura_list_daily_sleep', 'oura_list_daily_spo2', 'oura_list_daily_stress', 'oura_list_enhanced_tags',
+  'oura_list_heartrate', 'oura_list_rest_mode_periods', 'oura_list_ring_battery', 'oura_list_ring_configuration',
+  'oura_list_sessions',
+  'oura_list_sleep', 'oura_list_sleep_time', 'oura_list_tags', 'oura_list_vo2_max', 'oura_list_workouts', 'oura_onboarding',
   'oura_privacy_audit', 'oura_profile_get', 'oura_profile_update', 'oura_quickstart',
   'oura_revoke_access', 'oura_weekly_summary', 'oura_wellness_context'
 ];
@@ -19,7 +27,18 @@ const expectedResources = [
 const expectedPrompts = ['oura_daily_checkin', 'oura_heart_context_investigation', 'oura_weekly_review'];
 
 const client = new Client({ name: 'oura-mcp-smoke-test', version: '0.0.0' });
-const transport = new StdioClientTransport({ command: 'node', args: ['dist/index.js'] });
+const transport = new StdioClientTransport({
+  command: 'node',
+  args: ['dist/index.js'],
+  env: {
+    ...process.env,
+    HOME: smokeHome,
+    OURA_CLIENT_ID: '',
+    OURA_CLIENT_SECRET: '',
+    OURA_REDIRECT_URI: '',
+    OURA_TOKEN_PATH: join(smokeHome, 'tokens.json')
+  }
+});
 await client.connect(transport);
 try {
   const tools = await client.listTools();
@@ -45,6 +64,14 @@ try {
   assert.equal(capabilitiesResult.structuredContent?.unofficial, true);
   assert.ok(capabilitiesResult.structuredContent?.api_boundary?.does_not_include?.includes('raw accelerometer/device telemetry'));
   assert.ok(capabilitiesResult.structuredContent?.supported_data?.some((entry) => entry.tools?.includes('oura_list_daily_readiness')));
+  assert.ok(capabilitiesResult.structuredContent?.supported_data?.some((entry) => entry.tools?.includes('oura_list_daily_stress')));
+  for (const name of [
+    'oura_list_enhanced_tags', 'oura_list_daily_resilience', 'oura_list_daily_cardiovascular_age',
+    'oura_list_vo2_max', 'oura_list_ring_configuration', 'oura_list_ring_battery',
+    'oura_list_sleep_time', 'oura_list_rest_mode_periods'
+  ]) {
+    assert.ok(capabilitiesResult.structuredContent?.supported_data?.some((entry) => entry.tools?.includes(name)), `capabilities missing ${name}`);
+  }
   assert.ok(capabilitiesResult.structuredContent?.recommended_agent_flow?.some((step) => step.includes('oura_connection_status')));
 
   const inventoryResult = await client.callTool({ name: 'oura_data_inventory', arguments: { response_format: 'json' } });
@@ -55,6 +82,10 @@ try {
   assert.equal(manifestResult.structuredContent?.client, 'hermes');
   assert.ok(manifestResult.structuredContent?.hermes?.common_tool_names?.includes('mcp_oura_oura_connection_status'));
   assert.ok(manifestResult.structuredContent?.standard_tools?.includes('oura_list_daily_sleep'));
+  assert.ok(manifestResult.structuredContent?.standard_tools?.includes('oura_list_daily_stress'));
+  assert.ok(inventoryResult.structuredContent?.categories?.some((entry) => entry.tools?.includes('oura_list_daily_stress')));
+  assert.ok(inventoryResult.structuredContent?.categories?.some((entry) => entry.tools?.includes('oura_list_enhanced_tags')));
+  assert.ok(inventoryResult.structuredContent?.categories?.some((entry) => entry.tools?.includes('oura_list_vo2_max')));
   assert.equal(manifestResult.structuredContent?.hermes?.no_gateway_restart_for_data_access, true);
 
   const statusResult = await client.callTool({ name: 'oura_connection_status', arguments: { client: 'hermes', response_format: 'json' } });
@@ -65,4 +96,5 @@ try {
   console.log(JSON.stringify({ ok: true, tools: toolNames.length, resources: resourceUris.length, prompts: promptNames.length }, null, 2));
 } finally {
   await client.close();
+  rmSync(smokeHome, { recursive: true, force: true });
 }

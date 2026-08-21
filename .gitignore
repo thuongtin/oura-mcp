@@ -12,3 +12,4 @@ coverage/
 .mcpregistry_*
 docs/.vercel/
 .vercel
+.deploy-tmp/
